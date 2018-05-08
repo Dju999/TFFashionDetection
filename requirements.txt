@@ -1,0 +1,8 @@
+lxml
+oauth2client
+pydrive
+tqdm
+urllib3
+tensorflow
+matplotlib
+tarfile
