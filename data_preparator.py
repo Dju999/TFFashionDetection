@@ -6,6 +6,7 @@ import json
 import logging
 
 import tensorflow as tf
+import numpy as np
 from PIL import Image as Pil_image
 from lxml import etree
 import shutil
@@ -52,7 +53,7 @@ class DataPreparator:
         return json.loads(open(os.path.join('/content', 'TFFashionDetection', 'etc/directory_conf.json'), 'r').read())
 
     def build(self):
-        logger.info("Сохраняем информацию о категориях товаров")
+        print("Сохраняем информацию о категориях товаров")
         self.create_tf_dirs()
         self.deep_fashion_data_structure()
         self.prepare_img_index()
@@ -67,7 +68,7 @@ class DataPreparator:
         os.mkdir(os.path.join(self.destination_dir, 'annotations'))
         os.mkdir(os.path.join(self.destination_dir, 'data'))
         os.mkdir(os.path.join(self.destination_dir, 'checkpoints'))
-        logger.info("Создали директорию %s" % os.path.join(self.destination_dir, 'data'))
+        print("Создали директорию %s" % os.path.join(self.destination_dir, 'data'))
         os.mkdir(os.path.join(self.destination_dir, 'annotations', 'xmls'))
 
     def deep_fashion_data_structure(self):
@@ -116,10 +117,42 @@ class DataPreparator:
         }) for k in self.img_index
         ]
 
-        logger.info(
+        self.balance_img_index()
+
+        print(
             'Распределение примеров по классам: %s' %
             Counter([j['class'] for i, j in self.img_index.items()])
         )
+
+        print(
+            'Распределение примеров для оценки качества: %s' %
+            Counter([j['eval'] for i, j in self.img_index.items()])
+        )
+
+    def balance_img_index(self):
+        evals = np.unique([j['eval'] for i, j in self.img_index.items()])
+        classes = np.unique([j['class'] for i, j in self.img_index.items()])
+        balansed_img_index = dict()
+        for _eval in evals:
+            # выборка с элементами выборки
+            eval_examples = {i: j for i, j in self.img_index.items() if j['eval'] == str(_eval)}
+            # статистика распределения по классам
+            class_counter = Counter([j['class'] for i, j in eval_examples.items()])
+            # находим класс, у которого меньше всего представителей
+            min_elem_class, min_elem_num = list(class_counter.items())[0]
+            for i, j in class_counter.items():
+                min_elem_class, min_elem_num = (i, j) if j < min_elem_num else (min_elem_class, min_elem_num)
+            # формируем новый словарь: выпиливаем "лишние" обучающие примеры чтобы классы были сбалансированы
+            result_dict = dict()
+            for _class in classes:
+                class_examples = {i: j for i, j in eval_examples.items() if j['class'] == _class}
+                if _class != min_elem_class:
+                    # делаем downsample
+                    class_subsample = np.random.choice(list(class_examples.keys()), size=min_elem_num, replace=False)
+                    class_examples = {i: j for i, j in class_examples.items() if i in class_subsample}
+                result_dict.update(class_examples)
+            balansed_img_index.update(result_dict)
+    self.img_index = balansed_img_index
 
     def get_img_descriptions(self, f_name, file_descr):
         """Получаем описания обучающего примера: в виде XML и TFRecord"""
@@ -234,9 +267,9 @@ class DataPreparator:
         base_xml_path = os.path.join(self.destination_dir, 'annotations', 'xmls')
         trainval_path = os.path.join(self.destination_dir, 'annotations', 'trainval.txt')
         # trainval должны быть все названия, его не перезаписываем
-        trainval_file = open(trainval_path, 'w')
+        trainval_file = open(trainval_path, 'a')
         for scenario in scenarios:
-            logger.info("Генерим описания для сцинария %s" % scenario)
+            print("Генерим описания для сцeнария %s" % scenario)
             self.generate_files_by_scenario(scenario, trainval_file, base_xml_path)
         trainval_file.close()
         # записываем файл с метками классов
@@ -245,14 +278,17 @@ class DataPreparator:
         for k, v in self.label_mapping.items():
             label_map_file.write("""item { id: %s name: '%s'}\n""" % (k, v))
         label_map_file.close()
-        logger.info('Создали XML в директории: %s' % base_xml_path)
-        logger.info('Файл с метками классов: %s' % label_map_path)
+        print('Создали XML в директории: %s' % base_xml_path)
+        print('Файл с метками классов: %s' % label_map_path)
 
     def generate_files_by_scenario(self, scenario, trainval_descriptor, base_xml_path):
         """Генерим наборы файлов: XML+TFR"""
         tfr_out_path = os.path.join(self.destination_dir, 'annotations', scenario + '.record')
         writer = tf.python_io.TFRecordWriter(tfr_out_path)
-        for img_path, img_descr in self.img_index.items():
+        img_keys = list(self.img_index.keys())
+        np.random.shuffle(img_keys)
+        for img_path in img_keys:
+            img_descr = self.img_index[img_path]
             if img_descr['eval'] == scenario:
                 tf_example, xml_example = self.get_img_descriptions(img_path, img_descr)
                 with open(os.path.join(base_xml_path, img_descr['filename'][:-4] + '.xml'), 'w') as xml_file:
@@ -265,7 +301,7 @@ class DataPreparator:
                     os.path.join(self.destination_dir, 'images', img_descr['filename'])
                 )
         writer.close()
-        logger.info('Создали файл формата TFRecords: %s' % tfr_out_path)
+        print('Создали файл формата TFRecords: %s' % tfr_out_path)
 
 
 if __name__ == '__main__':
