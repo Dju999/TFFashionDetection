@@ -152,7 +152,7 @@ class DataPreparator:
                     class_examples = {i: j for i, j in class_examples.items() if i in class_subsample}
                 result_dict.update(class_examples)
             balansed_img_index.update(result_dict)
-    self.img_index = balansed_img_index
+        self.img_index = balansed_img_index
 
     def get_img_descriptions(self, f_name, file_descr):
         """Получаем описания обучающего примера: в виде XML и TFRecord"""
