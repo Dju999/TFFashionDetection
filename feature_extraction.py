@@ -31,10 +31,12 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import os
 import os.path
 import re
 import sys
 import tarfile
+import pickle
 
 import numpy as np
 from six.moves import urllib
@@ -150,15 +152,68 @@ def run_inference_on_image(image):
                                {'DecodeJpeg/contents:0': image_data})
         image_embedding_tensor = np.squeeze(image_embedding_tensor)
 
-        print(image_embedding_tensor)
-        print(image_embedding_tensor.shape)
+        return image_embedding_tensor
+
+
+def run_inference_on_dir(image_dir, max_images):
+    """Runs inference on an image.
+    Args:
+      image: Image file name.
+    Returns:
+      Nothing
+    """
+    image_list = os.listdir(image_dir)
+    result_images = dict()
+    # Creates graph from saved GraphDef.
+    create_graph()
+
+    cnt=0
+    with tf.Session() as sess:
+        for image in image_list:
+            image = os.path.join(image_dir, image)
+            if not tf.gfile.Exists(image):
+                tf.logging.fatal('File does not exist %s', image)
+                continue
+            if cnt > max_images:
+                break
+            print("Изображение %s, директория %s" % (image, image_dir))
+            image_data = tf.gfile.FastGFile(image, 'rb').read()
+
+            image_embedding_tensor = sess.graph.get_tensor_by_name('pool_3:0')
+            image_embedding_tensor = sess.run(image_embedding_tensor,
+                                   {'DecodeJpeg/contents:0': image_data})
+            image_embedding = np.squeeze(image_embedding_tensor)
+
+            result_images.update({image: image_embedding})
+            cnt +=1
+
+        pickle.dump(
+            result_images,
+            open(os.path.join(os.path.abspath(os.path.join(image_dir, os.pardir)), 'img_embeddings.pkl'), "wb")
+        )
+
+
+def get_dir_embeddings(model_dir, data_dir, num_top_predictions, max_images=None):
+    """Запускаем получение эмбеддинга для изображения"""
+    tf.app.flags.DEFINE_string("model_dir", model_dir, "Директория с моделью")
+    tf.app.flags.DEFINE_string("data_dir", data_dir, "Директория с данными")
+    tf.app.flags.DEFINE_integer("num_top_predictions", num_top_predictions, "Число предсказаний")
+    if max_images is None:
+        max_images = len(os.listdir(data_dir))
+
+    tf.app.flags.DEFINE_integer("max_images", max_images, "Число картинок из директории, по которым построим эмбеддинги")
+
+    global FLAGS
+    FLAGS = tf.app.flags.FLAGS
+
+    tf.app.run(main=dir_images)
 
 
 def get_embedding(model_dir, image_file, num_top_predictions):
     """Запускаем получение эмбеддинга для изображения"""
-    tf.app.flags.DEFINE_string("model_dir", model_dir, "Директория с тренировочными данными")
-    tf.app.flags.DEFINE_string("image_file", image_file, "Директория с тренировочными данными")
-    tf.app.flags.DEFINE_integer("num_top_predictions", num_top_predictions, "Директория с тренировочными данными")
+    tf.app.flags.DEFINE_string("model_dir", model_dir, "Директория с моделью")
+    tf.app.flags.DEFINE_string("image_file", image_file, "Путь до изображения")
+    tf.app.flags.DEFINE_integer("num_top_predictions", num_top_predictions, "Число предсказаний")
 
     global FLAGS
     FLAGS = tf.app.flags.FLAGS
@@ -189,10 +244,15 @@ def maybe_download_and_extract():
 def main(_):
     maybe_download_and_extract()
     image = (FLAGS.image_file if FLAGS.image_file else
-             os.path.join(FLAGS.model_dir, 'cropped_panda.jpg'))
+             os.path.join(FLAGS.data_dir, 'cropped_panda.jpg'))
     run_inference_on_image(image)
 
-"""
+
+def dir_images(_):
+    maybe_download_and_extract()
+    run_inference_on_dir(FLAGS.data_dir, FLAGS.max_images)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # classify_image_graph_def.pb:
@@ -205,7 +265,8 @@ if __name__ == '__main__':
         '--model_dir',
         type=str,
         default='/tmp/imagenet',
-        help="Path to classify_image_graph_def.pb,imagenet_synset_to_human_label_map.txt, and imagenet_2012_challenge_label_map_proto.pbtxt."
+        help="""Path to classify_image_graph_def.pb,imagenet_synset_to_human_label_map.txt, 
+        and imagenet_2012_challenge_label_map_proto.pbtxt."""
     )
     parser.add_argument(
         '--image_file',
@@ -221,4 +282,3 @@ if __name__ == '__main__':
     )
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
-"""
