@@ -145,19 +145,25 @@ def run_inference_on_image(image):
         # 'DecodeJpeg/contents:0': A tensor containing a string providing JPEG
         #   encoding of the image.
         # Runs the softmax tensor by feeding the image_data as input to the graph.
-        softmax_tensor = sess.graph.get_tensor_by_name('softmax:0')
-        predictions = sess.run(softmax_tensor,
+        image_embedding_tensor = sess.graph.get_tensor_by_name('pool_3:0')
+        image_embedding_tensor = sess.run(image_embedding_tensor,
                                {'DecodeJpeg/contents:0': image_data})
-        predictions = np.squeeze(predictions)
+        image_embedding_tensor = np.squeeze(image_embedding_tensor)
 
-        # Creates node ID --> English string lookup.
-        node_lookup = NodeLookup()
+        print(image_embedding_tensor)
+        print(image_embedding_tensor.shape)
 
-        top_k = predictions.argsort()[-FLAGS.num_top_predictions:][::-1]
-        for node_id in top_k:
-            human_string = node_lookup.id_to_string(node_id)
-            score = predictions[node_id]
-            print('%s (score = %.5f)' % (human_string, score))
+
+def get_embedding(model_dir, image_file, num_top_predictions):
+    """Запускаем получение эмбеддинга для изображения"""
+    tf.app.flags.DEFINE_string("model_dir", model_dir, "Директория с тренировочными данными")
+    tf.app.flags.DEFINE_string("image_file", image_file, "Директория с тренировочными данными")
+    tf.app.flags.DEFINE_integer("num_top_predictions", num_top_predictions, "Директория с тренировочными данными")
+
+    global FLAGS
+    FLAGS = tf.app.flags.FLAGS
+
+    tf.app.run(main=main)
 
 
 def maybe_download_and_extract():
@@ -186,7 +192,7 @@ def main(_):
              os.path.join(FLAGS.model_dir, 'cropped_panda.jpg'))
     run_inference_on_image(image)
 
-
+"""
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # classify_image_graph_def.pb:
@@ -199,11 +205,7 @@ if __name__ == '__main__':
         '--model_dir',
         type=str,
         default='/tmp/imagenet',
-        help="""\
-      Path to classify_image_graph_def.pb,
-      imagenet_synset_to_human_label_map.txt, and
-      imagenet_2012_challenge_label_map_proto.pbtxt.\
-      """
+        help="Path to classify_image_graph_def.pb,imagenet_synset_to_human_label_map.txt, and imagenet_2012_challenge_label_map_proto.pbtxt."
     )
     parser.add_argument(
         '--image_file',
@@ -219,3 +221,4 @@ if __name__ == '__main__':
     )
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
+"""
